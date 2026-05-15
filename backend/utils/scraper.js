@@ -1,77 +1,116 @@
-// utils/scraper.js — Puppeteer scraper for Amazon & Flipkart
+// utils/scraper.js — Puppeteer (Flipkart) + RapidAPI (Amazon)
 
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-extra");
+const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const cheerio = require("cheerio");
 
-// ─── AMAZON ──────────────────────────────────────────────────────────────────
+puppeteer.use(StealthPlugin());
 
-function buildAmazonReviewsUrl(rawUrl, page = 1) {
-  const url = new URL(rawUrl);
-  const asinMatch =
-    url.pathname.match(/(?:\/dp\/|\/gp\/product\/|\/product-reviews\/|\/ASIN\/)([A-Z0-9]{10})/) ||
+// ─── AMAZON via RapidAPI ──────────────────────────────────────────────────────
+
+function extractAsin(rawUrl) {
+  const m =
+    rawUrl.match(/(?:\/dp\/|\/gp\/product\/|\/product-reviews\/|\/ASIN\/)([A-Z0-9]{10})/) ||
     rawUrl.match(/\/([A-Z0-9]{10})(?:\/|\?|$)/);
-  if (!asinMatch)
-    throw new Error("Could not find Amazon ASIN in URL. Paste the product page URL.");
-  const asin = asinMatch[1];
-  const host = url.hostname;
-  return `https://${host}/product-reviews/${asin}?pageSize=10&pageNumber=${page}&sortBy=recent&reviewerType=all_reviews`;
+  if (!m) throw new Error("Amazon ASIN nahi mila URL mein. Product page ka URL paste karo.");
+  return m[1];
 }
 
 async function scrapeAmazon(rawUrl) {
-  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
-  try {
-    const page = await browser.newPage();
-    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-    await page.setExtraHTTPHeaders({ "Accept-Language": "en-IN,en;q=0.9" });
+  const apiKey = process.env.RAPIDAPI_KEY;
 
-    const allReviews = [];
+  if (!apiKey) {
+    throw new Error("RAPIDAPI_KEY nahi mili. backend/.env mein RAPIDAPI_KEY=your_key daal do.");
+  }
 
-    for (let pageNum = 1; pageNum <= 3; pageNum++) {
-      const reviewsUrl = buildAmazonReviewsUrl(rawUrl, pageNum);
-      console.log(`🔗 Amazon reviews URL (page ${pageNum}):`, reviewsUrl);
+  const asin = extractAsin(rawUrl);
+  console.log("✅ ASIN:", asin);
 
-      await page.goto(reviewsUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-      for (let i = 0; i < 3; i++) {
-        await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-        await new Promise((r) => setTimeout(r, 1200));
-      }
+  const allReviews = [];
+  const seenTexts = new Set(); // ← dedup across pages
 
-      const html = await page.content();
-      const $ = cheerio.load(html);
-      const title = $("title").text().trim();
+  for (let pageNum = 1; pageNum <= 3; pageNum++) {
+    const apiUrl = `https://real-time-amazon-data.p.rapidapi.com/product-reviews?asin=${asin}&page=${pageNum}&country=IN&sort_by=TOP_REVIEWS&star_rating=ALL&verified_purchases_only=false&images_or_videos_only=false&current_format_only=false`;
 
-      if (pageNum === 1) {
-        console.log("📄 Amazon page title:", title);
-        if (title.toLowerCase().includes("sign-in") || title.toLowerCase().includes("signin"))
-          throw new Error("Amazon is blocking automated access. Try Demo Mode or a Flipkart URL.");
-      }
+    console.log(`📡 Fetching Amazon reviews (page ${pageNum}) via RapidAPI...`);
 
-      let pageReviews = 0;
-      $('[data-hook="review"]').each((_, el) => {
-        const text = $('[data-hook="review-body"] span', el).not('[class*="cr-original"]').first().text().trim();
-        const ratingRaw = $('[data-hook="review-star-rating"] span', el).first().text() ||
-          $('[data-hook="cmps-review-star-rating"] span', el).first().text();
-        const rating = parseFloat(ratingRaw);
-        if (text && rating >= 1 && rating <= 5) {
-          allReviews.push({ text, rating: Math.round(rating) });
-          pageReviews++;
-        }
-      });
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        "x-rapidapi-key": apiKey,
+        "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
+      },
+    });
 
-      console.log(`  Page ${pageNum}: got ${pageReviews} reviews`);
-      if (pageReviews === 0) break; // no more pages
+    if (!response.ok) {
+      const errText = await response.text();
+      if (response.status === 401 || response.status === 403)
+        throw new Error("RapidAPI key invalid hai. Check karo backend/.env mein sahi key hai.");
+      if (response.status === 429)
+        throw new Error("RapidAPI rate limit exceed ho gaya. Thodi der baad try karo.");
+      throw new Error(`RapidAPI error: ${response.status} — ${errText.slice(0, 200)}`);
     }
 
-    console.log(`📊 Amazon total: ${allReviews.length} reviews`);
-    if (!allReviews.length)
-      throw new Error("Amazon blocked this request or no reviews found. Try Demo Mode.");
-    return allReviews;
-  } finally {
-    await browser.close();
+    const json = await response.json();
+    const reviews = json?.data?.reviews;
+
+    if (!reviews || reviews.length === 0) {
+      console.log(`  Page ${pageNum}: no reviews, stopping.`);
+      break;
+    }
+
+    let pageCount = 0;
+    for (const r of reviews) {
+      const comment = (r.review_comment || "").trim();
+      const title = (r.review_title || "").trim();
+      const rating = parseInt(r.review_star_rating) || 0;
+
+      if (rating < 1 || rating > 5) continue;
+
+      // Prefer full comment body; fallback to title only if no comment
+      let text = "";
+      if (comment.length >= 10) {
+        text = comment;
+      } else if (title.length >= 3) {
+        text = title;
+      } else {
+        continue;
+      }
+
+      // Skip duplicates across pages (RapidAPI sometimes repeats same page)
+      const key = text.toLowerCase().slice(0, 80);
+      if (seenTexts.has(key)) continue;
+      seenTexts.add(key);
+
+      allReviews.push({ text, rating });
+      pageCount++;
+    }
+
+    console.log(`  Page ${pageNum}: got ${pageCount} new reviews`);
+    if (pageCount === 0) {
+      console.log(`  All duplicates, stopping.`);
+      break;
+    }
   }
+
+  console.log(`📊 Amazon total: ${allReviews.length} reviews`);
+
+  if (!allReviews.length)
+    throw new Error("Amazon se reviews nahi mile. Product ka koi review nahi hai ya ASIN galat hai.");
+
+  return allReviews;
 }
 
-// ─── FLIPKART ─────────────────────────────────────────────────────────────────
+// ─── FLIPKART via Puppeteer ───────────────────────────────────────────────────
+
+function randomUA() {
+  const agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  ];
+  return agents[Math.floor(Math.random() * agents.length)];
+}
 
 function buildFlipkartReviewsUrl(rawUrl, pageNum = 1) {
   const url = new URL(rawUrl);
@@ -85,25 +124,21 @@ function buildFlipkartReviewsUrl(rawUrl, pageNum = 1) {
   return clean.toString();
 }
 
-// Extract reviews from the current page using confirmed DOM structure
 async function extractFlipkartReviewsFromPage(page) {
   return page.evaluate(() => {
     const results = [];
     const seen = new Set();
 
     document.querySelectorAll("div.css-g5y9jx").forEach((card) => {
-      // Must contain "Review for:" to be a review card
       const hasReviewFor = Array.from(card.querySelectorAll("*")).some(
         (el) => el.children.length === 0 && el.textContent.trim().startsWith("Review for:")
       );
       if (!hasReviewFor) return;
 
-      // Review body: <span class="css-1jxf684">
       const bodySpan = card.querySelector("span.css-1jxf684");
       const bodyText = bodySpan ? bodySpan.textContent.trim() : "";
       if (!bodyText || bodyText.length < 5 || seen.has(bodyText)) return;
 
-      // Review title: first short div.css-146c3p1 that isn't "Review for:"
       let title = "";
       const leafDivs = Array.from(card.querySelectorAll("div.css-146c3p1")).filter(
         (el) => el.children.length === 0
@@ -116,7 +151,6 @@ async function extractFlipkartReviewsFromPage(page) {
         }
       }
 
-      // Rating: aria-label on any element in/around the card
       let rating = 0;
       const parent = card.parentElement;
       const searchRoot = parent || card;
@@ -126,7 +160,6 @@ async function extractFlipkartReviewsFromPage(page) {
         if (m) rating = parseInt(m[1]);
       });
 
-      // Fallback: sibling element with lone digit 1-5
       if (!rating && parent) {
         const siblings = Array.from(parent.children);
         const cardIndex = siblings.indexOf(card);
@@ -145,12 +178,8 @@ async function extractFlipkartReviewsFromPage(page) {
       }
 
       if (!rating) rating = 3;
-
       seen.add(bodyText);
-      results.push({
-        text: title ? `${title} — ${bodyText}` : bodyText,
-        rating,
-      });
+      results.push({ text: title ? `${title} — ${bodyText}` : bodyText, rating });
     });
 
     return results;
@@ -158,29 +187,32 @@ async function extractFlipkartReviewsFromPage(page) {
 }
 
 async function scrapeFlipkart(rawUrl) {
-  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
   try {
     const page = await browser.newPage();
-    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-    await page.setExtraHTTPHeaders({ "Accept-Language": "en-IN,en;q=0.9", Referer: "https://www.flipkart.com/" });
+    await page.setUserAgent(randomUA());
+    await page.setExtraHTTPHeaders({
+      "Accept-Language": "en-IN,en;q=0.9",
+      Referer: "https://www.flipkart.com/",
+    });
 
     const allReviews = [];
     const seenTexts = new Set();
 
     for (let pageNum = 1; pageNum <= 3; pageNum++) {
       const reviewsUrl = buildFlipkartReviewsUrl(rawUrl, pageNum);
-      console.log(`🔗 Flipkart reviews URL (page ${pageNum}):`, reviewsUrl);
+      console.log(`🔗 Flipkart URL (page ${pageNum}):`, reviewsUrl);
 
       await page.goto(reviewsUrl, { waitUntil: "networkidle2", timeout: 40000 });
-
-      // Scroll to load all cards on this page
       for (let i = 0; i < 6; i++) {
         await page.evaluate(() => window.scrollBy(0, window.innerHeight));
         await new Promise((r) => setTimeout(r, 1500));
       }
 
-      if (pageNum === 1)
-        console.log("📄 Flipkart page title:", await page.title());
+      if (pageNum === 1) console.log("📄 Flipkart title:", await page.title());
 
       const pageReviews = await extractFlipkartReviewsFromPage(page);
       console.log(`  Page ${pageNum}: got ${pageReviews.length} reviews`);
@@ -194,16 +226,12 @@ async function scrapeFlipkart(rawUrl) {
         }
       }
 
-      // Stop if no new reviews found on this page
-      if (newCount === 0) {
-        console.log(`  No new reviews on page ${pageNum}, stopping.`);
-        break;
-      }
+      if (newCount === 0) { console.log(`  No new reviews, stopping.`); break; }
     }
 
     console.log(`📊 Flipkart total: ${allReviews.length} reviews`);
     if (!allReviews.length)
-      throw new Error("Could not extract Flipkart reviews. Try Demo Mode.");
+      throw new Error("Flipkart se reviews nahi mile. Demo Mode try karo.");
     return allReviews;
   } finally {
     await browser.close();
@@ -216,7 +244,7 @@ async function scrapeReviews(url) {
   const hostname = new URL(url).hostname;
   if (hostname.includes("amazon")) return scrapeAmazon(url);
   if (hostname.includes("flipkart")) return scrapeFlipkart(url);
-  throw new Error("Unsupported site. Only Amazon and Flipkart URLs are supported.");
+  throw new Error("Sirf Amazon aur Flipkart URLs supported hain.");
 }
 
 module.exports = { scrapeReviews };

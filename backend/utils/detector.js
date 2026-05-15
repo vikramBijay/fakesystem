@@ -26,10 +26,33 @@ function getWordCounts(text) {
   return { words, counts };
 }
 
+// Common words that are fine to repeat — don't count these
+const STOP_WORDS = new Set([
+  "the","a","an","is","it","in","on","of","to","and","for","with",
+  "this","that","my","i","very","so","but","not","are","was","its",
+  "have","has","be","at","by","or","as","if","do","did","get","got",
+  "me","we","he","she","they","you","your","our","their","will","can",
+  "just","also","than","then","when","what","how","all","from","more",
+  "even","after","about","been","would","could","should","which","there",
+  "into","them","these","those","some","such","no","up","out","one",
+]);
+
 function hasRepetitiveWords(text) {
   const { words, counts } = getWordCounts(text);
-  const maxCount = Math.max(...Object.values(counts));
-  return maxCount >= 3 || (words.length > 0 && maxCount / words.length > 0.4);
+  if (words.length === 0) return false;
+
+  // Only look at meaningful words (not stop words, length > 2)
+  const meaningful = Object.entries(counts).filter(
+    ([word]) => !STOP_WORDS.has(word) && word.length > 2
+  );
+
+  if (meaningful.length === 0) return false;
+
+  const maxCount = Math.max(...meaningful.map(([, c]) => c));
+  const meaningfulTotal = words.filter(w => !STOP_WORDS.has(w) && w.length > 2).length;
+
+  // Flag if: same meaningful word 3+ times, OR same word is >50% of all meaningful words
+  return maxCount >= 3 || (meaningfulTotal > 2 && maxCount / meaningfulTotal > 0.5);
 }
 
 function getRepeatedWords(text) {
@@ -39,27 +62,35 @@ function getRepeatedWords(text) {
     .map(([word]) => word);
 }
 
-const POS_WORDS = ["amazing", "best", "love", "fantastic", "excellent", "perfect",
-  "wonderful", "incredible", "outstanding", "superb", "flawless", "great"];
-const NEG_WORDS = ["worst", "terrible", "horrible", "awful", "waste", "garbage",
-  "useless", "broken", "never", "disgusting", "pathetic", "scam"];
-const SPAM_PHRASES = [
-  /\b(\w+)( \1){2,}/i,           // word repeated 3+ times in a row
-  /!{3,}/,                        // 3+ exclamation marks
-  /[A-Z]{5,}/,                    // ALL CAPS run
-  /\b(buy now|click here|order now|limited offer|act fast)\b/i,
-  /10\/10|5\/5|100%/,
+const POS_WORDS = [
+  "amazing", "best", "love", "fantastic", "excellent", "perfect",
+  "wonderful", "incredible", "outstanding", "superb", "flawless", "great",
+];
+const NEG_WORDS = [
+  "worst", "terrible", "horrible", "awful", "waste", "garbage",
+  "useless", "broken", "disgusting", "pathetic", "scam",
 ];
 
+const SPAM_PHRASES = [
+  /\b(\w+)( \1){2,}/i,  // word repeated 3+ times in a row
+  /!{4,}/,               // 4+ exclamation marks
+  /[A-Z]{6,}/,           // 6+ ALL CAPS run
+  /\b(buy now|click here|order now|limited offer|act fast)\b/i,
+];
+
+// Flag if short AND overloaded with positive words
 function isExtremePositive(text, rating) {
   const wordCount = countWords(text);
   const matchCount = POS_WORDS.filter(w => text.toLowerCase().includes(w)).length;
-  return rating === 5 && matchCount >= 3 && wordCount < 15;
+  // e.g. "great amazing perfect best wonderful" (5 stars, 5 words, 5 pos words) = fake
+  return rating === 5 && matchCount >= 3 && wordCount <= 10 && matchCount / wordCount >= 0.4;
 }
 
+// Flag if short AND overloaded with negative words
 function isExtremeNegative(text, rating) {
+  const wordCount = countWords(text);
   const matchCount = NEG_WORDS.filter(w => text.toLowerCase().includes(w)).length;
-  return rating === 1 && matchCount >= 2 && countWords(text) < 10;
+  return rating === 1 && matchCount >= 2 && wordCount <= 8 && matchCount / wordCount >= 0.35;
 }
 
 function matchedSpamPhrases(text) {
@@ -87,11 +118,13 @@ function buildExplanation(reasons, confidence) {
   if (reasons.includes("spam_pattern"))
     parts.push("it matches known spam patterns");
 
-  const joined = parts.length === 1
-    ? parts[0]
-    : parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+  const joined =
+    parts.length === 1
+      ? parts[0]
+      : parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
 
-  const certainty = confidence >= 80 ? "very likely" : confidence >= 60 ? "likely" : "possibly";
+  const certainty =
+    confidence >= 80 ? "very likely" : confidence >= 60 ? "likely" : "possibly";
   return `This review is ${certainty} fake because ${joined}.`;
 }
 
@@ -100,24 +133,36 @@ function buildExplanation(reasons, confidence) {
 function detectFake(review, allTexts) {
   const text = review.text;
   const wordCount = countWords(text);
-  let confidence = 10;
+  let confidence = 0;
   const reasons = [];
 
+  // Duplicate (+50) — only flag exact same text appearing multiple times
   const duplicates = allTexts.filter(t => t.toLowerCase() === text.toLowerCase());
-  if (duplicates.length > 1) { confidence += 45; reasons.push("duplicate"); }
+  if (duplicates.length > 1) { confidence += 50; reasons.push("duplicate"); }
 
-  if (wordCount < 5) { confidence += 30; reasons.push("too_short"); }
+  // Too short — under 3 words is almost certainly useless
+  if (wordCount <= 2) { confidence += 45; reasons.push("too_short"); }
+  else if (wordCount <= 5) { confidence += 20; reasons.push("too_short"); }
 
-  if (hasRepetitiveWords(text)) { confidence += 25; reasons.push("repetitive"); }
+  // Repetitive meaningful words
+  if (hasRepetitiveWords(text)) { confidence += 30; reasons.push("repetitive"); }
 
+  // Extreme positive — short + packed with positive words
   if (isExtremePositive(text, review.rating)) { confidence += 20; reasons.push("extreme_positive"); }
 
-  if (isExtremeNegative(text, review.rating)) { confidence += 15; reasons.push("extreme_negative"); }
+  // Extreme negative — short + packed with negative words
+  if (isExtremeNegative(text, review.rating)) { confidence += 20; reasons.push("extreme_negative"); }
 
-  if (matchedSpamPhrases(text).length > 0) { confidence += 15; reasons.push("spam_pattern"); }
+  // Spam patterns
+  if (matchedSpamPhrases(text).length > 0) { confidence += 20; reasons.push("spam_pattern"); }
 
   confidence = Math.min(confidence, 97);
-  const isFake = confidence >= 40;
+
+  // DEBUG — remove after testing
+  console.log(`[DEBUG] "${text.slice(0, 50)}" | conf:${confidence} | reasons:${JSON.stringify(reasons)}`);
+
+  // 45+ needed to call fake — requires at least one meaningful signal
+  const isFake = confidence >= 45;
 
   return {
     text: review.text,
@@ -132,13 +177,11 @@ function detectFake(review, allTexts) {
 // ─── Insights Generator ──────────────────────────────────────────────────────
 
 function buildInsights(rawReviews, analyzed) {
-  // Collect all repeated words across all reviews
   const repeatedWordsSet = new Set();
   for (const r of rawReviews) {
     getRepeatedWords(r.text).forEach(w => repeatedWordsSet.add(w));
   }
 
-  // Suspicious patterns found across the dataset
   const suspiciousPatterns = [];
 
   const duplicateTexts = rawReviews
@@ -159,11 +202,9 @@ function buildInsights(rawReviews, analyzed) {
   if (spamCount > 0)
     suspiciousPatterns.push(`${spamCount} review(s) match known spam patterns`);
 
-  // Rating distribution
   const ratingDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   for (const r of rawReviews) ratingDist[r.rating] = (ratingDist[r.rating] || 0) + 1;
 
-  // Fake reviews by rating
   const fakeByRating = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   for (const r of analyzed) {
     if (r.isFake) fakeByRating[r.rating] = (fakeByRating[r.rating] || 0) + 1;
