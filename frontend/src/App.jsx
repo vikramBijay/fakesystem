@@ -9,10 +9,10 @@ import { analyzeLocally, DEMO_REVIEWS } from './utils/detection';
 import './App.css';
 
 const BACKEND_URL = (() => {
-  const { protocol, hostname, port } = window.location;
-  if (protocol === 'file:' || hostname === '127.0.0.1' || hostname === 'localhost')
+  const { hostname } = window.location;
+  if (hostname === '127.0.0.1' || hostname === 'localhost')
     return 'http://localhost:4000';
-  return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+  return 'https://fakesystem.onrender.com';
 })();
 
 // ── Lightweight page-visibility wrapper ──────────────────────────────────
