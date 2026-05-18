@@ -3,6 +3,7 @@
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 
+process.env.PUPPETEER_CACHE_DIR = '/opt/render/.cache/puppeteer';
 puppeteer.use(StealthPlugin());
 
 // ─── AMAZON via RapidAPI ──────────────────────────────────────────────────────
