@@ -15,10 +15,39 @@ const BACKEND_URL = (() => {
   return 'https://fakesystem.onrender.com';
 })();
 
+// ── Song catalogue ────────────────────────────────────────────────────────
+export const SONGS = [
+  {
+    id: 'cornfield',
+    title: 'Cornfield Chase',
+    artist: 'Hans Zimmer · Interstellar',
+    src: '/interstellar-cornfield-chase.mp3',
+    emoji: '🌌',
+  },
+  {
+    id: 'unstoppable',
+    title: 'Unstoppable',
+    artist: 'Sia',
+    src: '/Unstoppable.mp3',
+    emoji: '⚡',
+  },
+  {
+    id: 'azadi',
+    title: 'Azadi',
+    artist: 'Dub Sharma',
+    src: '/Azadi___Dub_Sharma__Video.mp3',
+    emoji: '🇮🇳',
+  },
+  {
+    id: 'paradox',
+    title: 'Paradox',
+    artist: 'Dhanda Nyoliwala',
+    src: '/Dhanda_Nyoliwala_-_Paradox__Official_Music_Video_.mp3',
+    emoji: '🔥',
+  },
+];
+
 // ── Lightweight page-visibility wrapper ──────────────────────────────────
-// Keeps the component mounted (globe stays alive, no re-init).
-// Uses visibility + opacity so the hidden page is invisible AND
-// non-interactive. pointer-events:none prevents accidental clicks.
 function PageSlot({ visible, children }) {
   return (
     <div style={{
@@ -27,10 +56,8 @@ function PageSlot({ visible, children }) {
       zIndex: visible ? 1 : -1,
       opacity: visible ? 1 : 0,
       visibility: visible ? 'visible' : 'hidden',
-      // Instant show, gentle fade-in
       transition: visible ? 'opacity .18s ease' : 'none',
       pointerEvents: visible ? 'auto' : 'none',
-      // When hidden, take zero layout space
       ...(visible ? {} : { width: 0, height: 0, overflow: 'hidden' }),
     }}>
       {children}
@@ -42,6 +69,7 @@ export default function App() {
   const [page, setPage] = useState('home');
   const [results, setResults] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentSong, setCurrentSong] = useState(null); // SONGS[id] or null
   const [showPricing, setShowPricing] = useState(false);
   const audioRef = useRef(null);
 
@@ -51,15 +79,31 @@ export default function App() {
   };
 
   // ── Audio ─────────────────────────────────────────────────────────────
-  const toggleMusic = () => {
+  // Called from HomePage when user picks a song from the picker
+  const pickAndPlay = (song) => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (isPlaying) {
+    // If same song is already playing, just stop
+    if (isPlaying && currentSong?.id === song.id) {
       audio.pause();
       setIsPlaying(false);
-    } else {
-      audio.play().then(() => setIsPlaying(true)).catch(() => {});
+      return;
     }
+    audio.src = song.src;
+    audio.load();
+    audio.play()
+      .then(() => {
+        setCurrentSong(song);
+        setIsPlaying(true);
+      })
+      .catch(() => {});
+  };
+
+  const stopMusic = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.pause();
+    setIsPlaying(false);
   };
 
   // ── Analysis ──────────────────────────────────────────────────────────
@@ -98,7 +142,8 @@ export default function App() {
 
   return (
     <>
-      <audio ref={audioRef} src="/interstellar-cornfield-chase.mp3" loop preload="auto" />
+      {/* Single audio element — src is swapped dynamically */}
+      <audio ref={audioRef} loop preload="none" />
 
       <StarCanvas />
 
@@ -120,13 +165,14 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ── All pages always mounted — globe never re-initializes ── */}
       <PageSlot visible={page === 'home'}>
         <HomePage
           onAnalyze={() => goTo('search')}
           onDemo={runDemo}
           isPlaying={isPlaying}
-          onToggleMusic={toggleMusic}
+          currentSong={currentSong}
+          onPickSong={pickAndPlay}
+          onStopMusic={stopMusic}
         />
       </PageSlot>
 

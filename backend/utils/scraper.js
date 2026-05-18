@@ -2,7 +2,6 @@
 
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-const cheerio = require("cheerio");
 
 puppeteer.use(StealthPlugin());
 
@@ -18,20 +17,17 @@ function extractAsin(rawUrl) {
 
 async function scrapeAmazon(rawUrl) {
   const apiKey = process.env.RAPIDAPI_KEY;
-
-  if (!apiKey) {
+  if (!apiKey)
     throw new Error("RAPIDAPI_KEY nahi mili. backend/.env mein RAPIDAPI_KEY=your_key daal do.");
-  }
 
   const asin = extractAsin(rawUrl);
   console.log("✅ ASIN:", asin);
 
   const allReviews = [];
-  const seenTexts = new Set(); // ← dedup across pages
+  const seenTexts = new Set();
 
   for (let pageNum = 1; pageNum <= 3; pageNum++) {
     const apiUrl = `https://real-time-amazon-data.p.rapidapi.com/product-reviews?asin=${asin}&page=${pageNum}&country=IN&sort_by=TOP_REVIEWS&star_rating=ALL&verified_purchases_only=false&images_or_videos_only=false&current_format_only=false`;
-
     console.log(`📡 Fetching Amazon reviews (page ${pageNum}) via RapidAPI...`);
 
     const response = await fetch(apiUrl, {
@@ -53,51 +49,32 @@ async function scrapeAmazon(rawUrl) {
 
     const json = await response.json();
     const reviews = json?.data?.reviews;
-
-    if (!reviews || reviews.length === 0) {
-      console.log(`  Page ${pageNum}: no reviews, stopping.`);
-      break;
-    }
+    if (!reviews || reviews.length === 0) { console.log(`  Page ${pageNum}: no reviews.`); break; }
 
     let pageCount = 0;
     for (const r of reviews) {
       const comment = (r.review_comment || "").trim();
-      const title = (r.review_title || "").trim();
-      const rating = parseInt(r.review_star_rating) || 0;
-
+      const title   = (r.review_title   || "").trim();
+      const rating  = parseInt(r.review_star_rating) || 0;
       if (rating < 1 || rating > 5) continue;
 
-      // Prefer full comment body; fallback to title only if no comment
-      let text = "";
-      if (comment.length >= 10) {
-        text = comment;
-      } else if (title.length >= 3) {
-        text = title;
-      } else {
-        continue;
-      }
+      const text = comment.length >= 10 ? comment : title.length >= 3 ? title : null;
+      if (!text) continue;
 
-      // Skip duplicates across pages (RapidAPI sometimes repeats same page)
       const key = text.toLowerCase().slice(0, 80);
       if (seenTexts.has(key)) continue;
       seenTexts.add(key);
-
       allReviews.push({ text, rating });
       pageCount++;
     }
 
     console.log(`  Page ${pageNum}: got ${pageCount} new reviews`);
-    if (pageCount === 0) {
-      console.log(`  All duplicates, stopping.`);
-      break;
-    }
+    if (pageCount === 0) break;
   }
 
   console.log(`📊 Amazon total: ${allReviews.length} reviews`);
-
   if (!allReviews.length)
     throw new Error("Amazon se reviews nahi mile. Product ka koi review nahi hai ya ASIN galat hai.");
-
   return allReviews;
 }
 
@@ -111,6 +88,8 @@ function randomUA() {
   ];
   return agents[Math.floor(Math.random() * agents.length)];
 }
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function buildFlipkartReviewsUrl(rawUrl, pageNum = 1) {
   const url = new URL(rawUrl);
@@ -129,58 +108,78 @@ async function extractFlipkartReviewsFromPage(page) {
     const results = [];
     const seen = new Set();
 
-    document.querySelectorAll("div.css-g5y9jx").forEach((card) => {
-      const hasReviewFor = Array.from(card.querySelectorAll("*")).some(
-        (el) => el.children.length === 0 && el.textContent.trim().startsWith("Review for:")
-      );
-      if (!hasReviewFor) return;
+    // Strategy 1: New Flipkart React layout
+    const allCards = Array.from(document.querySelectorAll("div.css-g5y9jx"));
+    const reviewCards = allCards.filter((card) => {
+      const bodySpan = card.querySelector("span.css-1jxf684");
+      return bodySpan && bodySpan.textContent.trim().length >= 5;
+    });
 
+    for (const card of reviewCards) {
       const bodySpan = card.querySelector("span.css-1jxf684");
       const bodyText = bodySpan ? bodySpan.textContent.trim() : "";
-      if (!bodyText || bodyText.length < 5 || seen.has(bodyText)) return;
+      if (!bodyText || seen.has(bodyText)) continue;
 
+      // FIX: Skip any leaf that looks like a rating float ("5.0", "4.0" etc)
+      //      AND skip "Overall" which is Flipkart's placeholder title
       let title = "";
       const leafDivs = Array.from(card.querySelectorAll("div.css-146c3p1")).filter(
         (el) => el.children.length === 0
       );
       for (const d of leafDivs) {
         const t = d.textContent.trim();
-        if (!t.startsWith("Review for:") && t.length > 3 && t.length < 80) {
-          title = t;
-          break;
-        }
+        const isRatingFloat = /^\d(\.\d)?$/.test(t);          // "5.0", "4", "3.5"
+        const isOverall     = t.toLowerCase() === "overall";  // Flipkart placeholder
+        if (
+          !isRatingFloat && !isOverall &&
+          !t.startsWith("Review for:") && !t.startsWith("·") &&
+          !t.startsWith(",") && !t.startsWith("Helpful") &&
+          t !== "Verified Purchase" && t.length > 2 && t.length < 100
+        ) { title = t; break; }
       }
 
+      // Walk UP to find rating bubble (lone int 1-5 outside this card)
       let rating = 0;
-      const parent = card.parentElement;
-      const searchRoot = parent || card;
-      searchRoot.querySelectorAll("[aria-label]").forEach((el) => {
-        const label = el.getAttribute("aria-label") || "";
-        const m = label.match(/^(\d)(\.\d+)?\s*(out of \d+\s*)?stars?/i);
-        if (m) rating = parseInt(m[1]);
-      });
-
-      if (!rating && parent) {
-        const siblings = Array.from(parent.children);
-        const cardIndex = siblings.indexOf(card);
-        for (let i = Math.max(0, cardIndex - 3); i <= cardIndex; i++) {
-          const sib = siblings[i];
-          if (!sib) continue;
-          sib.querySelectorAll("*").forEach((el) => {
-            if (el.children.length === 0) {
-              const t = el.textContent.trim();
-              const n = parseInt(t);
-              if (n >= 1 && n <= 5 && t === String(n)) rating = n;
-            }
-          });
-          if (rating) break;
+      let ancestor = card.parentElement;
+      for (let depth = 0; depth < 8 && ancestor && !rating; depth++) {
+        const leaves = Array.from(ancestor.querySelectorAll("*")).filter(
+          (el) => el.children.length === 0 && !card.contains(el)
+        );
+        for (const leaf of leaves) {
+          const t = leaf.textContent.trim();
+          const n = parseInt(t);
+          if (n >= 1 && n <= 5 && t === String(n)) { rating = n; break; }
         }
+        ancestor = ancestor.parentElement;
       }
 
-      if (!rating) rating = 3;
       seen.add(bodyText);
-      results.push({ text: title ? `${title} — ${bodyText}` : bodyText, rating });
-    });
+      // Only prepend title if it's genuinely different from bodyText start
+      const useTitle = title && !bodyText.toLowerCase().startsWith(title.toLowerCase());
+      results.push({ text: useTitle ? `${title} — ${bodyText}` : bodyText, rating: rating || 3 });
+    }
+
+    // Strategy 2: Legacy Flipkart class names
+    if (results.length === 0) {
+      const combos = [
+        { card: "._27M-vq", body: ".t-ZTKy",  star: "._3LWZlK" },
+        { card: ".EPCmJX",  body: ".iCSeDn",  star: "._3LWZlK" },
+        { card: "._2sc7ZR", body: "._6K-7Co", star: "._1lRcqv" },
+      ];
+      for (const sel of combos) {
+        document.querySelectorAll(sel.card).forEach((card) => {
+          const bodyEl = card.querySelector(sel.body);
+          const bodyText = bodyEl ? bodyEl.textContent.trim() : "";
+          if (!bodyText || bodyText.length < 5 || seen.has(bodyText)) return;
+          const starEl = card.querySelector(sel.star);
+          let rating = starEl ? parseInt(starEl.textContent.trim()) : 3;
+          if (rating < 1 || rating > 5) rating = 3;
+          seen.add(bodyText);
+          results.push({ text: bodyText, rating });
+        });
+        if (results.length) break;
+      }
+    }
 
     return results;
   });
@@ -189,33 +188,55 @@ async function extractFlipkartReviewsFromPage(page) {
 async function scrapeFlipkart(rawUrl) {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox", "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-dev-shm-usage", "--window-size=1366,768",
+    ],
   });
   try {
     const page = await browser.newPage();
     await page.setUserAgent(randomUA());
+    await page.setViewport({ width: 1366, height: 768 });
     await page.setExtraHTTPHeaders({
       "Accept-Language": "en-IN,en;q=0.9",
-      Referer: "https://www.flipkart.com/",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Referer": "https://www.flipkart.com/",
+    });
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     });
 
     const allReviews = [];
     const seenTexts = new Set();
 
-    for (let pageNum = 1; pageNum <= 3; pageNum++) {
+    for (let pageNum = 1; pageNum <= 2; pageNum++) {
       const reviewsUrl = buildFlipkartReviewsUrl(rawUrl, pageNum);
       console.log(`🔗 Flipkart URL (page ${pageNum}):`, reviewsUrl);
 
-      await page.goto(reviewsUrl, { waitUntil: "networkidle2", timeout: 40000 });
-      for (let i = 0; i < 6; i++) {
-        await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-        await new Promise((r) => setTimeout(r, 1500));
+      try {
+        await page.goto(reviewsUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+      } catch (navErr) {
+        console.warn(`  ⚠️  Nav warning page ${pageNum}: ${navErr.message}`);
       }
 
-      if (pageNum === 1) console.log("📄 Flipkart title:", await page.title());
+      await sleep(4000);
+      for (let i = 0; i < 5; i++) {
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+        await sleep(1000);
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await sleep(500);
+
+      if (pageNum === 1) {
+        const title = await page.title();
+        console.log("📄 Page title:", title);
+        if (title.toLowerCase().includes("sign") || title.toLowerCase().includes("login"))
+          throw new Error("Flipkart login page aa gaya. Direct product-reviews URL paste karo.");
+      }
 
       const pageReviews = await extractFlipkartReviewsFromPage(page);
-      console.log(`  Page ${pageNum}: got ${pageReviews.length} reviews`);
+      console.log(`  Page ${pageNum}: extracted ${pageReviews.length} reviews`);
 
       let newCount = 0;
       for (const r of pageReviews) {
@@ -225,13 +246,13 @@ async function scrapeFlipkart(rawUrl) {
           newCount++;
         }
       }
-
       if (newCount === 0) { console.log(`  No new reviews, stopping.`); break; }
+      await sleep(1500);
     }
 
     console.log(`📊 Flipkart total: ${allReviews.length} reviews`);
     if (!allReviews.length)
-      throw new Error("Flipkart se reviews nahi mile. Demo Mode try karo.");
+      throw new Error("Flipkart se reviews nahi mile. Direct product-reviews URL paste karo ya Demo Mode try karo.");
     return allReviews;
   } finally {
     await browser.close();
@@ -239,10 +260,9 @@ async function scrapeFlipkart(rawUrl) {
 }
 
 // ─── ROUTER ──────────────────────────────────────────────────────────────────
-
 async function scrapeReviews(url) {
   const hostname = new URL(url).hostname;
-  if (hostname.includes("amazon")) return scrapeAmazon(url);
+  if (hostname.includes("amazon"))   return scrapeAmazon(url);
   if (hostname.includes("flipkart")) return scrapeFlipkart(url);
   throw new Error("Sirf Amazon aur Flipkart URLs supported hain.");
 }
