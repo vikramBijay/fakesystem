@@ -188,10 +188,12 @@ async function extractFlipkartReviewsFromPage(page) {
 async function scrapeFlipkart(rawUrl) {
   const browser = await puppeteer.launch({
     headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
       "--no-sandbox", "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
-      "--disable-dev-shm-usage", "--window-size=1366,768",
+      "--disable-dev-shm-usage", "--disable-gpu",
+      "--single-process", "--window-size=1366,768",
     ],
   });
   try {
