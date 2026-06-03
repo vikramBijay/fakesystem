@@ -7,7 +7,6 @@ import { SONGS } from '../App';
 function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
   return (
     <>
-      {/* Backdrop */}
       <div
         onClick={onClose}
         style={{
@@ -17,14 +16,13 @@ function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
           animation: 'fadeIn .18s ease both',
         }}
       />
-
-      {/* Modal card */}
       <div style={{
         position: 'fixed',
         bottom: '110px',
-        left: '3rem',
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: 201,
-        width: '300px',
+        width: 'min(300px, calc(100vw - 2rem))',
         background: 'rgba(10,8,26,0.96)',
         border: '1px solid rgba(139,92,246,0.35)',
         borderRadius: '18px',
@@ -32,7 +30,6 @@ function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
         boxShadow: '0 0 40px rgba(109,40,217,0.3), 0 8px 40px rgba(0,0,0,0.5)',
         animation: 'slideUp .22s cubic-bezier(.34,1.56,.64,1) both',
       }}>
-        {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           marginBottom: '1rem',
@@ -59,7 +56,6 @@ function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
           </button>
         </div>
 
-        {/* Song list */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {SONGS.map(song => {
             const active = isPlaying && currentSong?.id === song.id;
@@ -70,15 +66,11 @@ function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
                 style={{
                   display: 'flex', alignItems: 'center', gap: '12px',
                   padding: '.75rem 1rem',
-                  background: active
-                    ? 'rgba(109,40,217,0.28)'
-                    : 'rgba(255,255,255,0.04)',
+                  background: active ? 'rgba(109,40,217,0.28)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${active ? 'rgba(139,92,246,0.55)' : 'rgba(255,255,255,0.08)'}`,
                   borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'all .18s',
-                  textAlign: 'left',
-                  width: '100%',
+                  cursor: 'pointer', transition: 'all .18s',
+                  textAlign: 'left', width: '100%',
                 }}
                 onMouseEnter={e => {
                   if (!active) {
@@ -93,19 +85,15 @@ function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
                   }
                 }}
               >
-                {/* Emoji / now-playing indicator */}
                 <div style={{
                   width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0,
-                  background: active
-                    ? 'linear-gradient(135deg,#6d28d9,#8b5cf6)'
-                    : 'rgba(139,92,246,0.12)',
+                  background: active ? 'linear-gradient(135deg,#6d28d9,#8b5cf6)' : 'rgba(139,92,246,0.12)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '1.1rem',
                   boxShadow: active ? '0 0 14px rgba(109,40,217,0.5)' : 'none',
                   transition: 'all .18s',
                 }}>
                   {active ? (
-                    // Animated bars when this song is active
                     <span style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '14px' }}>
                       {[1, 1.7, 0.9, 1.4].map((h, i) => (
                         <span key={i} style={{
@@ -150,10 +138,7 @@ function SongPicker({ currentSong, isPlaying, onPick, onClose }) {
           })}
         </div>
 
-        <p style={{
-          marginTop: '.85rem', fontSize: '.7rem', color: '#3e3a58',
-          textAlign: 'center',
-        }}>
+        <p style={{ marginTop: '.85rem', fontSize: '.7rem', color: '#3e3a58', textAlign: 'center' }}>
           Song repeats on loop · click again to stop
         </p>
       </div>
@@ -169,36 +154,33 @@ export default function HomePage({
 }) {
   const [showPicker, setShowPicker] = useState(false);
 
-  const handleMusicBtn = () => {
-    if (isPlaying) {
-      // Show picker so user can switch, or they can stop from there
-      setShowPicker(v => !v);
-    } else {
-      setShowPicker(v => !v);
-    }
+  const handleMusicBtn = () => setShowPicker(v => !v);
+
+  // Shared button styles
+  const musicBtnStyle = {
+    display: 'inline-flex', alignItems: 'center', gap: '9px',
+    padding: '.42rem 1.1rem .42rem .42rem',
+    background: isPlaying ? 'rgba(109,28,217,0.35)' : 'rgba(255,255,255,0.05)',
+    color: isPlaying ? '#c4b5fd' : '#6b6890',
+    border: `1px solid ${isPlaying ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
+    borderRadius: '999px', fontSize: '.78rem', fontWeight: 600,
+    fontFamily: "'Syne', sans-serif", cursor: 'pointer',
+    backdropFilter: 'blur(14px)', transition: 'all .22s',
+    whiteSpace: 'nowrap', letterSpacing: '.04em',
   };
 
   return (
-    <div style={{
-      position: 'relative',
-      width: '100%',
-      height: '100vh',
-      overflow: 'hidden',
-    }}>
+    <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
 
-      {/* ── z1: GLOBE ── */}
+      {/* ── z1: GLOBE — responsive size via CSS custom prop ── */}
       <div style={{
         position: 'absolute',
         top: '28%',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 1,
-        width: '740px',
-        height: '740px',
-        background: 'none',
-        border: 'none',
-        boxShadow: 'none',
-        outline: 'none',
+        width: 'clamp(340px, 65vw, 740px)',
+        height: 'clamp(340px, 65vw, 740px)',
         pointerEvents: 'auto',
       }}>
         <HeroGlobe geoData={API} />
@@ -220,143 +202,147 @@ export default function HomePage({
 
       {/* ── z3: TITLE ── */}
       <div style={{ position:'absolute',top:'118px',left:0,right:0,zIndex:3,textAlign:'center',pointerEvents:'none',userSelect:'none',animation:'fadeUp .65s ease .2s both' }}>
-        <h1 style={{ fontFamily:"'Syne', sans-serif",fontSize:'clamp(3.5rem, 7.5vw, 6.5rem)',fontWeight:800,lineHeight:1,letterSpacing:'-0.02em',background:'linear-gradient(170deg, #ffffff 0%, #e8e2ff 20%, #c4b5fd 50%, #a855f7 80%, #7c3aed 100%)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text',margin:0,filter:'drop-shadow(0 0 55px rgba(167,139,250,0.7)) drop-shadow(0 2px 20px rgba(109,40,217,0.5))',whiteSpace:'nowrap' }}>
+        <h1 style={{
+          fontFamily:"'Syne', sans-serif",
+          fontSize:'clamp(2.6rem, 7.5vw, 6.5rem)',
+          fontWeight:800,lineHeight:1,letterSpacing:'-0.02em',
+          background:'linear-gradient(170deg, #ffffff 0%, #e8e2ff 20%, #c4b5fd 50%, #a855f7 80%, #7c3aed 100%)',
+          WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text',
+          margin:0,
+          filter:'drop-shadow(0 0 55px rgba(167,139,250,0.7)) drop-shadow(0 2px 20px rgba(109,40,217,0.5))',
+          whiteSpace:'nowrap',
+        }}>
           FakeGuard
         </h1>
       </div>
 
-      {/* ── z5: SIDE TEXT ── */}
-      <div style={{ position:'absolute',top:'50%',left:'3rem',transform:'translateY(-50%)',zIndex:5,maxWidth:'190px',pointerEvents:'none',animation:'fadeUp .7s ease .4s both' }}>
+      {/* ── z5: SIDE TEXT — hidden on mobile ── */}
+      <div style={{
+        position:'absolute',top:'50%',left:'3rem',transform:'translateY(-50%)',
+        zIndex:5,maxWidth:'190px',pointerEvents:'none',animation:'fadeUp .7s ease .4s both',
+      }} className="home-side-text">
         <p style={{ fontSize:'.84rem',color:'#8B7CF6',lineHeight:1.95,fontFamily:"'DM Sans', sans-serif",margin:0 }}>
           Dive into the world of online reviews and expose what's real and what's not. Our AI analyzes patterns, detects fake feedback, and empowers you with trustworthy insights.
         </p>
       </div>
 
-      {/* ── z5: BOTTOM-LEFT ── */}
-      <div style={{ position:'absolute',bottom:'6%',left:'3rem',zIndex:5,display:'flex',flexDirection:'column',alignItems:'flex-start',gap:'10px',animation:'fadeUp .7s ease .5s both' }}>
-
-        {/* 🎵 Music button */}
-        <button
-          onClick={handleMusicBtn}
-          title={isPlaying ? `Now playing: ${currentSong?.title} — click to switch` : 'Choose & play background music'}
-          style={{
-            display:'inline-flex',alignItems:'center',gap:'9px',
-            padding:'.42rem 1.1rem .42rem .42rem',
-            background: isPlaying ? 'rgba(109,28,217,0.35)' : 'rgba(255,255,255,0.05)',
-            color: isPlaying ? '#c4b5fd' : '#6b6890',
-            border:`1px solid ${isPlaying ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
-            borderRadius:'999px',fontSize:'.78rem',fontWeight:600,
-            fontFamily:"'Syne', sans-serif",cursor:'pointer',
-            backdropFilter:'blur(14px)',transition:'all .22s',
-            whiteSpace:'nowrap',letterSpacing:'.04em',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = isPlaying ? 'rgba(109,28,217,0.5)' : 'rgba(255,255,255,0.09)';
-            e.currentTarget.style.color = '#c4b5fd';
-            e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)';
-            e.currentTarget.style.transform = 'translateY(-2px)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = isPlaying ? 'rgba(109,28,217,0.35)' : 'rgba(255,255,255,0.05)';
-            e.currentTarget.style.color = isPlaying ? '#c4b5fd' : '#6b6890';
-            e.currentTarget.style.borderColor = isPlaying ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)';
-            e.currentTarget.style.transform = '';
-          }}
-        >
-          {/* Icon */}
-          <span style={{
-            width:'26px',height:'26px',borderRadius:'50%',
-            background: isPlaying ? 'linear-gradient(135deg,#6d28d9,#8b5cf6)' : 'rgba(139,92,246,0.2)',
-            display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,
-            boxShadow: isPlaying ? '0 0 12px rgba(109,40,217,0.6)' : 'none',
-            transition:'all .22s',
-          }}>
-            {isPlaying ? (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <rect x="1.5" y="1.5" width="2.5" height="7" rx="1" fill="#fff"/>
-                <rect x="6" y="1.5" width="2.5" height="7" rx="1" fill="#fff"/>
-              </svg>
-            ) : (
-              <svg width="9" height="10" viewBox="0 0 9 10" fill="none">
-                <path d="M1 1l7 4L1 9V1z" fill="#a78bfa"/>
-              </svg>
-            )}
-          </span>
-
-          {isPlaying ? (
-            <span style={{ display:'flex',alignItems:'center',gap:'2px' }}>
-              {[1,1.6,0.8,1.3].map((h,i) => (
-                <span key={i} style={{
-                  display:'inline-block',width:'2px',height:`${8*h}px`,background:'#a78bfa',
-                  borderRadius:'2px',
-                  animation:`soundBar ${0.5+i*0.15}s ease-in-out infinite alternate`,
-                  transformOrigin:'bottom',
-                }} />
-              ))}
-              <span style={{ marginLeft:'6px' }}>
-                {currentSong?.title ?? 'Playing'}
-              </span>
-            </span>
-          ) : 'Play Music'}
-        </button>
-
-        {/* Stop button — only when playing */}
-        {isPlaying && (
+      {/* ── z5: BOTTOM ACTIONS ── */}
+      <div style={{
+        position:'absolute',bottom:'6%',left:0,right:0,zIndex:5,
+        display:'flex',justifyContent:'space-between',alignItems:'flex-end',
+        padding:'0 clamp(1rem,4vw,3rem)',
+        flexWrap:'wrap',gap:'12px',
+      }}>
+        {/* Left cluster */}
+        <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-start',gap:'10px',animation:'fadeUp .7s ease .5s both' }}>
+          {/* Music button */}
           <button
-            onClick={onStopMusic}
-            style={{
-              padding:'.3rem .9rem',
-              background:'transparent',
-              color:'#6b6890',
-              border:'1px solid rgba(255,255,255,0.08)',
-              borderRadius:'999px',
-              fontSize:'.72rem',fontWeight:500,
-              fontFamily:"'Syne', sans-serif",
-              cursor:'pointer',transition:'all .2s',
+            onClick={handleMusicBtn}
+            title={isPlaying ? `Now playing: ${currentSong?.title} — click to switch` : 'Choose & play background music'}
+            style={musicBtnStyle}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = isPlaying ? 'rgba(109,28,217,0.5)' : 'rgba(255,255,255,0.09)';
+              e.currentTarget.style.color = '#c4b5fd';
+              e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)';
+              e.currentTarget.style.transform = 'translateY(-2px)';
             }}
-            onMouseEnter={e => { e.currentTarget.style.color='#f87171'; e.currentTarget.style.borderColor='rgba(248,113,113,0.35)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color='#6b6890'; e.currentTarget.style.borderColor='rgba(255,255,255,0.08)'; }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = isPlaying ? 'rgba(109,28,217,0.35)' : 'rgba(255,255,255,0.05)';
+              e.currentTarget.style.color = isPlaying ? '#c4b5fd' : '#6b6890';
+              e.currentTarget.style.borderColor = isPlaying ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)';
+              e.currentTarget.style.transform = '';
+            }}
           >
-            ■ Stop Music
+            <span style={{
+              width:'26px',height:'26px',borderRadius:'50%',
+              background: isPlaying ? 'linear-gradient(135deg,#6d28d9,#8b5cf6)' : 'rgba(139,92,246,0.2)',
+              display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,
+              boxShadow: isPlaying ? '0 0 12px rgba(109,40,217,0.6)' : 'none',
+              transition:'all .22s',
+            }}>
+              {isPlaying ? (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect x="1.5" y="1.5" width="2.5" height="7" rx="1" fill="#fff"/>
+                  <rect x="6" y="1.5" width="2.5" height="7" rx="1" fill="#fff"/>
+                </svg>
+              ) : (
+                <svg width="9" height="10" viewBox="0 0 9 10" fill="none">
+                  <path d="M1 1l7 4L1 9V1z" fill="#a78bfa"/>
+                </svg>
+              )}
+            </span>
+            {isPlaying ? (
+              <span style={{ display:'flex',alignItems:'center',gap:'2px' }}>
+                {[1,1.6,0.8,1.3].map((h,i) => (
+                  <span key={i} style={{
+                    display:'inline-block',width:'2px',height:`${8*h}px`,background:'#a78bfa',
+                    borderRadius:'2px',
+                    animation:`soundBar ${0.5+i*0.15}s ease-in-out infinite alternate`,
+                    transformOrigin:'bottom',
+                  }} />
+                ))}
+                <span style={{ marginLeft:'6px' }}>{currentSong?.title ?? 'Playing'}</span>
+              </span>
+            ) : 'Play Music'}
           </button>
-        )}
 
-        {/* Analyze Reviews */}
-        <button
-          onClick={onAnalyze}
-          style={{
-            display:'inline-flex',alignItems:'center',gap:'12px',
-            padding:'.55rem 1.4rem .55rem .55rem',
-            background:'rgba(90,20,180,0.28)',color:'#ddd8ff',
-            border:'1px solid rgba(139,92,246,0.4)',borderRadius:'999px',
-            fontSize:'.85rem',fontWeight:600,fontFamily:"'Syne', sans-serif",
-            cursor:'pointer',backdropFilter:'blur(14px)',transition:'all .22s',whiteSpace:'nowrap',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background='rgba(109,28,217,0.5)'; e.currentTarget.style.transform='translateY(-2px)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background='rgba(90,20,180,0.28)'; e.currentTarget.style.transform=''; }}
-        >
-          <span style={{ width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#6d28d9,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:'0 0 14px rgba(109,40,217,0.6)' }}>
-            <svg width="9" height="11" viewBox="0 0 9 11" fill="none">
-              <path d="M1 1l7 4.5L1 10V1z" fill="#fff" />
-            </svg>
-          </span>
-          Analyze Reviews
-        </button>
+          {isPlaying && (
+            <button
+              onClick={onStopMusic}
+              style={{
+                padding:'.3rem .9rem',background:'transparent',color:'#6b6890',
+                border:'1px solid rgba(255,255,255,0.08)',borderRadius:'999px',
+                fontSize:'.72rem',fontWeight:500,fontFamily:"'Syne', sans-serif",
+                cursor:'pointer',transition:'all .2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color='#f87171'; e.currentTarget.style.borderColor='rgba(248,113,113,0.35)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color='#6b6890'; e.currentTarget.style.borderColor='rgba(255,255,255,0.08)'; }}
+            >
+              ■ Stop Music
+            </button>
+          )}
+
+          {/* Analyze Reviews */}
+          <button
+            onClick={onAnalyze}
+            style={{
+              display:'inline-flex',alignItems:'center',gap:'12px',
+              padding:'.55rem 1.4rem .55rem .55rem',
+              background:'rgba(90,20,180,0.28)',color:'#ddd8ff',
+              border:'1px solid rgba(139,92,246,0.4)',borderRadius:'999px',
+              fontSize:'.85rem',fontWeight:600,fontFamily:"'Syne', sans-serif",
+              cursor:'pointer',backdropFilter:'blur(14px)',transition:'all .22s',whiteSpace:'nowrap',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(109,28,217,0.5)'; e.currentTarget.style.transform='translateY(-2px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background='rgba(90,20,180,0.28)'; e.currentTarget.style.transform=''; }}
+          >
+            <span style={{ width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#6d28d9,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:'0 0 14px rgba(109,40,217,0.6)' }}>
+              <svg width="9" height="11" viewBox="0 0 9 11" fill="none">
+                <path d="M1 1l7 4.5L1 10V1z" fill="#fff" />
+              </svg>
+            </span>
+            Analyze Reviews
+          </button>
+        </div>
+
+        {/* Right: Try Demo */}
+        <div style={{ animation:'fadeUp .7s ease .55s both' }}>
+          <button
+            onClick={onDemo}
+            style={{
+              padding:'.65rem 1.6rem',background:'transparent',color:'#7a7698',
+              border:'1px solid rgba(255,255,255,0.1)',borderRadius:'999px',
+              fontSize:'.85rem',fontWeight:500,fontFamily:"'Syne', sans-serif",
+              cursor:'pointer',transition:'all .22s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(139,92,246,0.4)'; e.currentTarget.style.color='#c4bfee'; e.currentTarget.style.transform='translateY(-2px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; e.currentTarget.style.color='#7a7698'; e.currentTarget.style.transform=''; }}
+          >
+            Try Demo Mode
+          </button>
+        </div>
       </div>
 
-      {/* ── z5: BOTTOM-RIGHT ghost button ── */}
-      <div style={{ position:'absolute',bottom:'6%',right:'3rem',zIndex:5,animation:'fadeUp .7s ease .55s both' }}>
-        <button
-          onClick={onDemo}
-          style={{ padding:'.65rem 1.6rem',background:'transparent',color:'#7a7698',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'999px',fontSize:'.85rem',fontWeight:500,fontFamily:"'Syne', sans-serif",cursor:'pointer',transition:'all .22s' }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(139,92,246,0.4)'; e.currentTarget.style.color='#c4bfee'; e.currentTarget.style.transform='translateY(-2px)'; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; e.currentTarget.style.color='#7a7698'; e.currentTarget.style.transform=''; }}
-        >
-          Try Demo Mode
-        </button>
-      </div>
-
-      {/* ── Song Picker Modal ── */}
       {showPicker && (
         <SongPicker
           currentSong={currentSong}
@@ -372,6 +358,15 @@ export default function HomePage({
         @keyframes slideUp { from{opacity:0;transform:translateY(16px) scale(0.96)} to{opacity:1;transform:none} }
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.6)} }
         @keyframes soundBar { from{transform:scaleY(0.4);opacity:0.6} to{transform:scaleY(1);opacity:1} }
+
+        /* Hide side text on small screens */
+        @media(max-width:680px){
+          .home-side-text{ display:none !important; }
+        }
+        /* Tighten bottom cluster on small screens */
+        @media(max-width:480px){
+          .home-side-text{ display:none !important; }
+        }
       `}</style>
     </div>
   );
